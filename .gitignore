@@ -1,0 +1,6 @@
+**__pycache__/
+HDFS_v1/
+preprocessed/
+mlruns/
+models/
+*.pkl
