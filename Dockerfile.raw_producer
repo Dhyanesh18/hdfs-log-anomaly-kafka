@@ -1,0 +1,6 @@
+FROM python_base:latest
+
+WORKDIR /app
+COPY ./scripts/raw_producer.py ./scripts/
+
+CMD ["python", "scripts/raw_producer.py"]

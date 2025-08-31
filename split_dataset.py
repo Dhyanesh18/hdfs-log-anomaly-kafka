@@ -1,7 +1,6 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-# Load your dataset
 df = pd.read_csv("preprocessed/Event_occurrence_matrix.csv")
 
 # Split 70% train, 30% test (stratify on Label for balanced classes)

@@ -12,7 +12,7 @@ producer = KafkaProducer(
     value_serializer=lambda v: json.dumps(v).encode('utf-8')
 )
 
-mini_batch_size = 50   # smaller batches for smoother streaming
+mini_batch_size = 500   # smaller batches for smoother streaming
 stream_delay = 0.01    # 10ms between mini-batches
 
 num_batches = (len(df) + mini_batch_size - 1) // mini_batch_size

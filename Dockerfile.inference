@@ -1,0 +1,6 @@
+FROM python_base:latest
+
+WORKDIR /app
+COPY ./scripts/inference.py ./scripts/
+
+CMD ["python", "scripts/inference.py"]

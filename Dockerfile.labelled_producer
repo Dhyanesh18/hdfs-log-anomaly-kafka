@@ -1,0 +1,6 @@
+FROM python_base:latest
+
+WORKDIR /app
+COPY ./scripts/labelled_producer.py ./scripts/
+
+CMD ["python", "scripts/labelled_producer.py"]

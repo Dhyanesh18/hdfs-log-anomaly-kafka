@@ -19,20 +19,64 @@ services:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
-  # For adding another broker into the cluster
-  # kafka2:
-  #   image: confluentinc/cp-kafka:7.3.0
-  #   container_name: kafka2
-  #   depends_on:
-  #     - zookeeper
-  #   ports:
-  #     - "9093:9092"  # expose different host port
-  #   environment:
-  #     KAFKA_BROKER_ID: 2
-  #     KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-  #     KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
-  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9093
-  #     KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 2
+  retrainer:
+    build:
+      context: .
+      dockerfile: Dockerfile.retrainer
+    container_name: retrainer
+    command: python scripts/retrainer.py
+    depends_on:
+      - kafka
+    volumes:
+      - ./scripts:/app/scripts
+      - ./preprocessed:/app/preprocessed
+  aggregator:
+    build:
+      context: .
+      dockerfile: Dockerfile.aggregator
+    container_name: aggregator
+    command: python scripts/aggregate_consumer.py
+    depends_on:
+      - kafka
+    volumes:
+      - ./scripts:/app/scripts
+      - ./preprocessed:/app/preprocessed
+
+  inference:
+    build:
+      context: .
+      dockerfile: Dockerfile.inference
+    container_name: inference
+    command: python scripts/inference.py
+    depends_on:
+      - kafka
+    volumes:
+      - ./scripts:/app/scripts
+      - ./preprocessed:/app/preprocessed
+
+  labelled_producer:
+    build:
+      context: .
+      dockerfile: Dockerfile.labelled_producer
+    container_name: labelled_producer
+    command: python scripts/labelled_producer.py
+    depends_on:
+      - kafka
+    volumes:
+      - ./scripts:/app/scripts
+      - ./preprocessed:/app/preprocessed
+
+  raw_producer:
+    build:
+      context: .
+      dockerfile: Dockerfile.raw_producer
+    container_name: raw_producer
+    command: python scripts/raw_producer.py
+    depends_on:
+      - kafka
+    volumes:
+      - ./scripts:/app/scripts
+      - ./preprocessed:/app/preprocessed

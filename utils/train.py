@@ -9,15 +9,24 @@ import mlflow.sklearn
 def train_model(df_batch, version):
     """
     Train RandomForest on a batch of data and log to MLflow.
-    Returns trained model and classification report.
+    Returns trained model, classification report, and saves feature columns for inference.
     """
+    # Features and labels
     X = df_batch.drop(columns=['BlockId', 'Label', 'Type'], errors='ignore').astype('float64')
     y = df_batch['Label'].map({'Success': 0, 'Fail': 1})
 
+    # Save feature column names for inference
+    os.makedirs('models', exist_ok=True)
+    feature_columns_path = f"models/model_columns_{version}.pkl"
+    joblib.dump(list(X.columns), feature_columns_path)
+    print(f"Saved feature columns for inference: {feature_columns_path}")
+
+    # Train-test split
     X_train, X_val, y_train, y_val = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
+    # RandomForest
     clf = RandomForestClassifier(
         n_estimators=50,
         class_weight='balanced',
@@ -26,12 +35,12 @@ def train_model(df_batch, version):
     )
     clf.fit(X_train, y_train)
 
+    # Validation
     y_pred = clf.predict(X_val)
     report = classification_report(y_val, y_pred, digits=4, output_dict=True)
     print(classification_report(y_val, y_pred, digits=4))
 
-    # Save model locally
-    os.makedirs('models', exist_ok=True)
+    # Save model
     model_path = f"models/model_{version}.joblib"
     joblib.dump(clf, model_path)
 
