@@ -1,4 +1,4 @@
-# HDFS Log Anomaly Detection Project (Updated)
+# HDFS Log Anomaly Detection Project
 
 ## Overview
 
@@ -8,11 +8,11 @@ The system processes **raw HDFS logs line-by-line**, aggregates them per block, 
 
 ### Key Features:
 
-* Dual-mode: can handle **preprocessed block features** or **raw logs**.
-* **Aggregator service** to convert raw logs → block-wise event distributions.
-* **Streaming inference** with a RandomForest model.
-* **Streaming retrainer** for incremental model updates.
-* Detailed logging and metrics tracking.
+- Dual-mode: can handle **preprocessed block features** or **raw logs**.
+- **Aggregator service** to convert raw logs → block-wise event distributions.
+- **Streaming inference** with a RandomForest model.
+- **Streaming retrainer** for incremental model updates.
+- Detailed logging and metrics tracking.
 
 ---
 
@@ -31,39 +31,40 @@ The system processes **raw HDFS logs line-by-line**, aggregates them per block, 
 
 ### 1. **Raw Log Producer (`raw_producer.py`)**
 
-* Reads HDFS logs line-by-line (`HDFS_v1/HDFS.log`).
-* Extracts **block IDs** using regex (`blk_*`).
-* Streams logs to Kafka `raw_logs` topic (key=BlockId).
-* Supports throttling to simulate real-time streaming.
+- Reads HDFS logs line-by-line (`HDFS_v1/HDFS.log`).
+- Extracts **block IDs** using regex (`blk_*`).
+- Streams logs to Kafka `raw_logs` topic (key=BlockId).
+- Supports throttling to simulate real-time streaming.
 
 ### 2. **Aggregator (`aggregate_consumer.py`)**
 
-* Consumes `raw_logs`.
-* Buffers logs per block, maps to **event IDs (E1–E29 + UNKNOWN)** using `EventExtractor`.
-* Flushes:
+- Consumes `raw_logs`.
+- Buffers logs per block, maps to **event IDs (E1–E29 + UNKNOWN)** using `EventExtractor`.
+- Flushes:
 
-  * **Normal flush:** `MIN_LOGS_PER_BLOCK` logs collected.
-  * **Timeout flush:** `BLOCK_TIMEOUT` seconds elapsed.
-* Publishes aggregated events to `aggregated_events`.
+  - **Normal flush:** `MIN_LOGS_PER_BLOCK` logs collected.
+  - **Timeout flush:** `BLOCK_TIMEOUT` seconds elapsed.
+
+- Publishes aggregated events to `aggregated_events`.
 
 ### 3. **Streaming Inference (`inference.py`)**
 
-* Consumes `aggregated_events`.
-* Loads a **trained RandomForest model** (`random_forest_hdfs.pkl`).
-* Performs anomaly detection with probability threshold (default 0.75).
-* Sends anomalies to `anomalies` topic.
+- Consumes `aggregated_events`.
+- Loads a **trained RandomForest model** (`random_forest_hdfs.pkl`).
+- Performs anomaly detection with probability threshold (default 0.75).
+- Sends anomalies to `anomalies` topic.
 
 ### 4. **Mini-batch / CSV Producer (`stream_test_data.py`)**
 
-* Streams preprocessed CSV (`Event_occurrence_matrix_test.csv`) for testing.
-* Supports **mini-batch streaming** with delays.
+- Streams preprocessed CSV (`Event_occurrence_matrix_test.csv`) for testing.
+- Supports **mini-batch streaming** with delays.
 
 ### 5. **Streaming Retrainer (`retrainer.py`)**
 
-* Consumes either `raw_logs` or `hdfs_logs` for retraining.
-* Buffers incoming rows in memory until `batch_size` is reached.
-* Retrains RandomForest on **combined dataset** (historical + new batch).
-* Updates latest model (`models/model_base.joblib`).
+- Consumes either `raw_logs` or `hdfs_logs` for retraining.
+- Buffers incoming rows in memory until `batch_size` is reached.
+- Retrains RandomForest on **combined dataset** (historical + new batch).
+- Updates latest model (`models/model_base.joblib`).
 
 ---
 
@@ -210,16 +211,16 @@ python scripts/retrainer.py
 
 1. **Incremental models:**
 
-   * Future: Replace RandomForest with incremental models using `partial_fit`.
+   - Future: Replace RandomForest with incremental models using `partial_fit`.
 
 2. **Scaling:**
 
-   * Raw logs use 50 Kafka partitions → can scale multiple aggregators.
-   * Aggregated events and anomalies are single-partitioned but can be increased for production.
+   - Raw logs use 50 Kafka partitions → can scale multiple aggregators.
+   - Aggregated events and anomalies are single-partitioned but can be increased for production.
 
 3. **Monitoring & Visualization:**
 
-   * Stream anomalies to dashboards (Grafana / Plotly) for operational monitoring.
+   - Stream anomalies to dashboards (Grafana / Plotly) for operational monitoring.
 
 ---
 
