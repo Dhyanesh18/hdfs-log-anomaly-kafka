@@ -1,114 +1,117 @@
-# HDFS Log Anomaly Detection Project
+# HDFS Log Anomaly Detection Project (Updated)
 
 ## Overview
 
 This project implements a **streaming anomaly detection pipeline** for HDFS logs using a **RandomForest-based supervised model**, Kafka for streaming, and MLflow for experiment tracking.
 
-The system is designed to detect anomalous block behaviors based on **event distributions** extracted from logs. While the current implementation assumes preprocessed **block-wise event distributions**, the pipeline is adaptable to **raw log streaming**, where logs are processed per line to extract event distributions dynamically.
+The system processes **raw HDFS logs line-by-line**, aggregates them per block, performs **anomaly detection**, and supports **incremental retraining**.
+
+### Key Features:
+
+* Dual-mode: can handle **preprocessed block features** or **raw logs**.
+* **Aggregator service** to convert raw logs → block-wise event distributions.
+* **Streaming inference** with a RandomForest model.
+* **Streaming retrainer** for incremental model updates.
+* Detailed logging and metrics tracking.
 
 ---
 
-## Project Assumptions
+## Kafka Topics
 
-1. **Block-wise aggregation for features**
-
-   * The current dataset (`Event_occurrence_matrix_train.csv`) contains **event counts per block**.
-   * Each row represents a block with counts for each HDFS event (E1–E29).
-
-2. **Raw log processing (production scenario)**
-
-   * HDFS logs are typically individual lines, each representing an event.
-   * In a production scenario, a **preprocessing step** could:
-
-     1. Extract the **event ID** from each log line.
-     2. Accumulate logs per block to create a **block-wise event distribution vector**.
-     3. Once a block has enough logs (e.g., 20), stream its distribution vector to Kafka for inference.
-
-> **Important:** In this project, we have **assumed that block-wise event distributions are already preprocessed**. We directly stream these distributions to Kafka instead of processing raw log lines. This simplifies the workflow while still allowing the core inference and retraining logic to be tested and demonstrated.
-
-3. **Streaming setup**
-
-   * Kafka topics simulate streaming:
-
-     * `hdfs_logs` → Preprocessed per-block event distributions.
-     * `hdfs_predictions` → Anomalies flagged by the model which can be consumed for sending alerts or dashboard data.
-
-4. **Inference and retraining**
-
-   * The consumer reads block distributions from Kafka, runs inference, and flags anomalies.
-   * New block distributions are appended to the training CSV.
-   * The model retrains after a configurable batch size (currently 5000 blocks).
+| Topic               | Partitions | Purpose                                                        |
+| ------------------- | ---------- | -------------------------------------------------------------- |
+| `raw_logs`          | 50         | Raw HDFS logs (key=BlockId)                                    |
+| `aggregated_events` | 1          | Aggregated event distributions per block                       |
+| `anomalies`         | 1          | Anomalous blocks flagged by the model                          |
+| `hdfs_logs`         | 1          | Preprocessed block-wise feature rows (optional test streaming) |
 
 ---
 
 ## Project Components
 
-### 1. **Training Script (`train.py`)**
+### 1. **Raw Log Producer (`raw_producer.py`)**
 
-* Trains a **RandomForestClassifier** on block-wise event distributions.
-* Logs parameters, metrics, and models to **MLflow**.
-* Saves the latest model as `models/model_base.joblib`.
+* Reads HDFS logs line-by-line (`HDFS_v1/HDFS.log`).
+* Extracts **block IDs** using regex (`blk_*`).
+* Streams logs to Kafka `raw_logs` topic (key=BlockId).
+* Supports throttling to simulate real-time streaming.
 
-**Key features:**
+### 2. **Aggregator (`aggregate_consumer.py`)**
 
-* Balanced class handling (`Success` vs `Fail`)
-* Train/test split with stratification
-* Retraining on updated dataset
+* Consumes `raw_logs`.
+* Buffers logs per block, maps to **event IDs (E1–E29 + UNKNOWN)** using `EventExtractor`.
+* Flushes:
 
----
+  * **Normal flush:** `MIN_LOGS_PER_BLOCK` logs collected.
+  * **Timeout flush:** `BLOCK_TIMEOUT` seconds elapsed.
+* Publishes aggregated events to `aggregated_events`.
 
-### 2. **Streaming Retrainer (`streaming_retrainer.py`)**
+### 3. **Streaming Inference (`inference.py`)**
 
-* Kafka consumer reads mini-batches of preprocessed blocks.
-* Maintains an **in-memory buffer** for batch retraining.
-* Runs inference on incoming data: only **anomalous blocks are sent** to `hdfs_predictions`.
-* Retrains model after buffer reaches the batch size.
+* Consumes `aggregated_events`.
+* Loads a **trained RandomForest model** (`random_forest_hdfs.pkl`).
+* Performs anomaly detection with probability threshold (default 0.75).
+* Sends anomalies to `anomalies` topic.
 
-**Workflow:**
+### 4. **Mini-batch / CSV Producer (`stream_test_data.py`)**
 
-1. Receive block-wise feature rows via Kafka.
-2. Run model inference for anomaly detection.
-3. Stream anomalies to Kafka.
-4. Append new rows to CSV for retraining.
+* Streams preprocessed CSV (`Event_occurrence_matrix_test.csv`) for testing.
+* Supports **mini-batch streaming** with delays.
 
----
+### 5. **Streaming Retrainer (`retrainer.py`)**
 
-### 3. **Kafka Streaming Script (`stream_to_kafka.py`)**
-
-* Streams preprocessed block-wise features or mini-batches to Kafka.
-* Supports small batch sizes and simulated delays to mimic real-time streaming.
+* Consumes either `raw_logs` or `hdfs_logs` for retraining.
+* Buffers incoming rows in memory until `batch_size` is reached.
+* Retrains RandomForest on **combined dataset** (historical + new batch).
+* Updates latest model (`models/model_base.joblib`).
 
 ---
 
 ## Kafka Setup
 
-1. **Start Kafka and Zookeeper**
+### 1. Start Kafka & Zookeeper
 
 ```bash
 docker-compose up -d
 ```
 
-2. **Create Kafka Topics**
+### 2. Create Topics
 
 ```bash
-# Topic for incoming preprocessed block/event distributions
+# Raw HDFS logs
+docker exec -it kafka kafka-topics \
+  --create \
+  --topic raw_logs \
+  --bootstrap-server localhost:9092 \
+  --partitions 50 \
+  --replication-factor 1
+
+# Aggregated event distributions
+docker exec -it kafka kafka-topics \
+  --create \
+  --topic aggregated_events \
+  --bootstrap-server localhost:9092 \
+  --partitions 1 \
+  --replication-factor 1
+
+# Anomalous blocks
+docker exec -it kafka kafka-topics \
+  --create \
+  --topic anomalies \
+  --bootstrap-server localhost:9092 \
+  --partitions 1 \
+  --replication-factor 1
+
+# Optional test streaming (preprocessed CSV)
 docker exec -it kafka kafka-topics \
   --create \
   --topic hdfs_logs \
   --bootstrap-server localhost:9092 \
   --partitions 1 \
   --replication-factor 1
-
-# Topic for anomalies detected by the model
-docker exec -it kafka kafka-topics \
-  --create \
-  --topic hdfs_predictions \
-  --bootstrap-server localhost:9092 \
-  --partitions 1 \
-  --replication-factor 1
 ```
 
-3. **Verify Topics**
+### 3. Verify Topics
 
 ```bash
 docker exec -it kafka kafka-topics --list --bootstrap-server localhost:9092
@@ -117,15 +120,11 @@ docker exec -it kafka kafka-topics --list --bootstrap-server localhost:9092
 Expected output:
 
 ```
+raw_logs
+aggregated_events
+anomalies
 hdfs_logs
-hdfs_predictions
 ```
-
-> Notes:
->
-> * `--partitions 1` is sufficient for local testing.
-> * `--replication-factor 1` is required for single-broker setup.
-> * In production, consider multiple partitions for parallelism and higher replication for fault tolerance.
 
 ---
 
@@ -135,120 +134,113 @@ hdfs_predictions
 Raw HDFS Logs (line by line)
             |
             v
-     Preprocessing Script
-  (extract event IDs per log)
+    Raw Log Producer → Kafka raw_logs (50 partitions)
             |
             v
-   Block-wise aggregation buffer
-  (wait until N logs per block)
+     Aggregator Service
+ - Buffers logs per block
+ - Maps logs → event IDs
+ - Normal / Timeout flush
             |
             v
-Kafka Producer → Topic: hdfs_logs
+Kafka aggregated_events (1 partition)
             |
             v
-Streaming Retrainer / Inference Consumer
-  - Run RandomForest inference
-  - Stream anomalies → Topic: hdfs_predictions
-  - Append block to training CSV
+Streaming Inference Service
+ - Run RandomForest
+ - Detect anomalies
+ - Send anomalies → Kafka anomalies (1 partition)
             |
             v
-Periodic Retraining (every batch_size blocks)
+Optional: Streaming Retrainer
+ - Append rows to training CSV
+ - Retrain model periodically
+ - Update models/model_base.joblib
 ```
 
 ---
 
 ## Usage
 
-1. **Start Kafka & Zookeeper**
+### 1. Start Kafka & Zookeeper
 
 ```bash
 docker-compose up -d
 ```
 
-2. **Train initial model**
+### 2. Train initial model
 
 ```bash
 python first_model.py
 ```
 
-3. **Create topics in Kafka**
-```
-docker exec -it kafka kafka-topics \
-  --create \
-  --topic hdfs_logs \
-  --bootstrap-server localhost:9092 \
-  --partitions 1 \
-  --replication-factor 1
-
-# Topic for anomalies detected by the model
-docker exec -it kafka kafka-topics \
-  --create \
-  --topic hdfs_predictions \
-  --bootstrap-server localhost:9092 \
-  --partitions 1 \
-  --replication-factor 1
-```
-
-5. **Stream data to Kafka**
+### 3. Start Raw Log Producer (optional if testing with CSV)
 
 ```bash
-python producer.py
+python scripts/raw_producer.py
 ```
 
-5. **Run streaming retrainer / inference consumer**
+### 4. Start Aggregator Service
 
 ```bash
-python consumer.py
+python scripts/aggregate_consumer.py
+```
+
+### 5. Start Streaming Inference
+
+```bash
+python scripts/inference.py
+```
+
+### 6. Stream Preprocessed CSV (for testing)
+
+```bash
+python scripts/labelled_producer.py
+```
+
+### 7. Start Streaming Retrainer
+
+```bash
+python scripts/retrainer.py
 ```
 
 ---
 
 ## Notes & Future Improvements
 
-1. **Raw log ingestion:**
+1. **Incremental models:**
 
-   * Currently, we assume preprocessed block distributions.
-   * In production, raw logs can be streamed line-by-line, then aggregated per block dynamically.
+   * Future: Replace RandomForest with incremental models using `partial_fit`.
 
-2. **Sliding-window aggregation:**
+2. **Scaling:**
 
-   * Maintain a rolling window of recent logs per block for more adaptive features.
+   * Raw logs use 50 Kafka partitions → can scale multiple aggregators.
+   * Aggregated events and anomalies are single-partitioned but can be increased for production.
 
-3. **Incremental model training:**
+3. **Monitoring & Visualization:**
 
-   * Future versions could replace RandomForest with other models that use partial_fit or are incrementaly trainable instead of retraining with whole dataset.
-
-4. **Dynamic retraining:**
-
-   * Retraining frequency can be based on number of anomalies or stream volume.
-
-5. **Scaling:**
-
-   * Multiple Kafka partitions and distributed consumers can handle large HDFS clusters efficiently.
+   * Stream anomalies to dashboards (Grafana / Plotly) for operational monitoring.
 
 ---
 
 ## Directory Structure
 
 ```
+├── HDFS_v1/
+│   └── HDFS.log
 ├── preprocessed/
 │   ├── Event_occurrence_matrix_train.csv
 │   └── Event_occurrence_matrix_test.csv
 ├── models/
-│   └── model_base.joblib
-├── train.py
-├── streaming_retrainer.py
-├── stream_to_kafka.py
+│   └── random_forest_hdfs.pkl
+├── scripts/
+│   ├── aggregate_consumer.py
+│   ├── inference.py
+│   ├── labelled_producer.py
+│   ├── raw_producer.py
+│   └── retrainer.py
+├── Dockerfile.*
 ├── docker-compose.yml
+├── requirements.txt
 └── README.md
 ```
-
----
-
-This version now **explicitly acknowledges the assumption about raw log streaming** while explaining how it could be done in a production scenario.
-
----
-
-If you want, I can also **add a section with example Kafka producer/consumer commands** for testing streaming end-to-end. It’s useful for someone who wants to quickly verify the pipeline.
-
-Do you want me to add that?
