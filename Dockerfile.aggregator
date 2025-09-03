@@ -1,7 +1,0 @@
-FROM python_base:latest
-
-WORKDIR /app
-
-COPY ./scripts/aggregate_consumer.py ./scripts/
-
-CMD ["python", "scripts/aggregate_consumer.py"]

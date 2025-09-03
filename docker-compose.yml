@@ -1,3 +1,5 @@
+version: "3.8"
+
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.3.0
@@ -22,61 +24,67 @@ services:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
-  retrainer:
-    build:
-      context: .
-      dockerfile: Dockerfile.retrainer
-    container_name: retrainer
-    command: python scripts/retrainer.py
+  topic-init:
+    image: confluentinc/cp-kafka:7.3.0
+    depends_on:
+      - kafka
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic aggregated_events --partitions 1 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic anomalies --partitions 1 --replication-factor 1
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic hdfs_logs --partitions 1 --replication-factor 1
+
+  aggregate-consumer:
+    build: ./docker
+    command: ["python", "services/aggregate_consumer.py"]
     depends_on:
       - kafka
     volumes:
-      - ./scripts:/app/scripts
-      - ./preprocessed:/app/preprocessed
-  aggregator:
-    build:
-      context: .
-      dockerfile: Dockerfile.aggregator
-    container_name: aggregator
-    command: python scripts/aggregate_consumer.py
-    depends_on:
-      - kafka
-    volumes:
-      - ./scripts:/app/scripts
+      - ./services:/app/services
+      - ./utils:/app/utils
+      - ./models:/app/models
       - ./preprocessed:/app/preprocessed
 
   inference:
-    build:
-      context: .
-      dockerfile: Dockerfile.inference
-    container_name: inference
-    command: python scripts/inference.py
+    build: ./docker
+    command: ["python", "services/inference.py"]
     depends_on:
       - kafka
     volumes:
-      - ./scripts:/app/scripts
+      - ./services:/app/services
+      - ./utils:/app/utils
+      - ./models:/app/models
       - ./preprocessed:/app/preprocessed
 
-  labelled_producer:
-    build:
-      context: .
-      dockerfile: Dockerfile.labelled_producer
-    container_name: labelled_producer
-    command: python scripts/labelled_producer.py
+  retrainer:
+    build: ./docker
+    command: ["python", "services/retrainer.py"]
     depends_on:
       - kafka
     volumes:
-      - ./scripts:/app/scripts
+      - ./services:/app/services
+      - ./utils:/app/utils
+      - ./models:/app/models
       - ./preprocessed:/app/preprocessed
 
-  raw_producer:
-    build:
-      context: .
-      dockerfile: Dockerfile.raw_producer
-    container_name: raw_producer
-    command: python scripts/raw_producer.py
+  raw-producer:
+    build: ./docker
+    command: ["python", "services/raw_producer.py"]
     depends_on:
       - kafka
     volumes:
-      - ./scripts:/app/scripts
+      - ./services:/app/services
+      - ./utils:/app/utils
+      - ./models:/app/models
+      - ./preprocessed:/app/preprocessed
+
+  labelled-producer:
+    build: ./docker
+    command: ["python", "services/labelled_producer.py"]
+    depends_on:
+      - kafka
+    volumes:
+      - ./services:/app/services
+      - ./utils:/app/utils
+      - ./models:/app/models
       - ./preprocessed:/app/preprocessed
