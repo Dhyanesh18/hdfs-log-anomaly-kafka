@@ -114,58 +114,32 @@ Streaming Retrainer
 
 ## Usage
 
-### 1. Start Kafka & Zookeeper
-
-```bash
-docker-compose up -d
-```
-
-### 2. Train initial model
+### 1. Train initial model
 
 RandomForest:
 
 ```bash
-python train.py
+python utils/train.py
 ```
 
 Autoencoder:
 
 ```bash
-python train_ae.py
+python utils/train_ae.py
 ```
 
-### 3. Start Raw Log Producer
+### 2. Start Kafka & Zookeeper
 
 ```bash
-python scripts/raw_producer.py
+docker-compose up -d
 ```
 
-### 4. Start Aggregator
+### 3. Check logs
 
 ```bash
-python scripts/aggregate_consumer.py
+docker-compose logs -f inference
+docker-compose logs -f aggregate-consumer
 ```
-
-### 5. Start Streaming Inference
-
-```bash
-python scripts/inference_randomforest.py
-# or
-python scripts/inference.py
-```
-
-### 6. Stream Preprocessed CSV (optional)
-
-```bash
-python scripts/labelled_producer.py
-```
-
-### 7. Start Retrainer
-
-```bash
-python scripts/retrainer.py
-```
-
 ---
 
 ## Evaluation
@@ -211,14 +185,15 @@ python scripts/retrainer.py
 ├── models/
 │   ├── random_forest_hdfs.pkl
 │   └── autoencoder_hdfs.pth
-├── scripts/
+├── services/
 │   ├── aggregate_consumer.py
 │   ├── inference.py
 │   ├── labelled_producer.py
 │   ├── raw_producer.py
 │   ├── retrainer_randomforest.py
 │   └── retrainer.py
-├── Dockerfile.*
+├── docker/
+│   └── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
 └── README.md
