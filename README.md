@@ -1,5 +1,8 @@
 # HDFS Log Anomaly Detection Project
 
+<img width="676" height="721" alt="Untitled Diagram drawio" src="https://github.com/user-attachments/assets/cc0c6ba9-4d03-4d59-9f67-d936dfd95c2b" />
+
+
 ## Overview
 
 This project implements a **modular streaming anomaly detection pipeline** for HDFS logs using **Kafka for streaming** and **MLflow for experiment tracking**.
